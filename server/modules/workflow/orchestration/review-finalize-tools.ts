@@ -271,7 +271,7 @@ export function createReviewFinalizeTools(deps: CreateReviewFinalizeToolsDeps) {
       }
     }
 
-    if (currentTask.workflow_pack_key === "video_preprod") {
+    if (currentTask.workflow_pack_key === "video_preprod" && !currentTask.source_task_id) {
       const wtInfo = taskWorktrees.get(taskId) as
         | { worktreePath?: string; projectPath?: string; branchName?: string }
         | undefined;

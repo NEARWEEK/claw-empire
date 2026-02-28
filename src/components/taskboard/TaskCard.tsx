@@ -71,6 +71,11 @@ export default function TaskCard({
   const [agentWarning, setAgentWarning] = useState(false);
 
   const assignedAgent = task.assigned_agent ?? agents.find((agent) => agent.id === task.assigned_agent_id);
+  const fallbackAssignedName =
+    (locale === "ko" ? task.agent_name_ko || task.agent_name : task.agent_name || task.agent_name_ko) ||
+    task.assigned_agent_id;
+  const assignedDisplayName = assignedAgent ? (locale === "ko" ? assignedAgent.name_ko : assignedAgent.name) : null;
+  const assignedLabel = assignedDisplayName || fallbackAssignedName || null;
   const department = departments.find((d) => d.id === task.department_id);
   const typeBadge = getTaskTypeBadge(task.task_type, t);
 
@@ -140,13 +145,13 @@ export default function TaskCard({
 
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-1.5">
-          {assignedAgent ? (
+          {assignedAgent && assignedLabel ? (
             <>
               <AgentAvatar agent={assignedAgent} agents={agents} size={20} />
-              <span className="text-xs text-slate-300">
-                {locale === "ko" ? assignedAgent.name_ko : assignedAgent.name}
-              </span>
+              <span className="text-xs text-slate-300">{assignedLabel}</span>
             </>
+          ) : assignedLabel ? (
+            <span className="text-xs text-slate-300">{assignedLabel}</span>
           ) : (
             <span className="text-xs text-slate-500">
               {t({ ko: "미배정", en: "Unassigned", ja: "未割り当て", zh: "未分配" })}
@@ -163,6 +168,18 @@ export default function TaskCard({
           agents={agents}
           departments={departments}
           value={task.assigned_agent_id ?? ""}
+          placeholder={
+            assignedAgent || !assignedLabel
+              ? undefined
+              : t(
+                  {
+                    ko: `배정됨(숨김): ${assignedLabel}`,
+                    en: `Assigned (hidden): ${assignedLabel}`,
+                    ja: `割り当て済み(非表示): ${assignedLabel}`,
+                    zh: `已分配（隐藏）: ${assignedLabel}`,
+                  },
+                )
+          }
           onChange={(agentId) => {
             setAgentWarning(false);
             if (agentId) {

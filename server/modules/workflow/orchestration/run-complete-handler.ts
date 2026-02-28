@@ -156,23 +156,7 @@ export function createRunCompleteHandler(deps: CreateRunCompleteHandlerDeps) {
 
     if (exitCode === 0 && task) {
       let videoArtifactReady = true;
-      if (task.workflow_pack_key === "video_preprod") {
-        const rollbackAgentStatsForHold = () => {
-          if (!task.assigned_agent_id) return;
-          db.prepare(
-            `
-              UPDATE agents
-              SET stats_tasks_done = MAX(0, stats_tasks_done - 1),
-                  stats_xp = MAX(0, stats_xp - 10)
-              WHERE id = ?
-            `,
-          ).run(task.assigned_agent_id);
-          const correctedAgent = db.prepare("SELECT * FROM agents WHERE id = ?").get(task.assigned_agent_id) as
-            | Record<string, unknown>
-            | undefined;
-          broadcast("agent_status", correctedAgent);
-        };
-
+      if (task.workflow_pack_key === "video_preprod" && !task.source_task_id) {
         const openSubtasksRow = db
           .prepare("SELECT COUNT(*) AS cnt FROM subtasks WHERE task_id = ? AND status != 'done'")
           .get(taskId) as { cnt?: number } | undefined;
@@ -188,148 +172,144 @@ export function createRunCompleteHandler(deps: CreateRunCompleteHandlerDeps) {
           .get(taskId) as { cnt?: number } | undefined;
         const openSubtasks = Number(openSubtasksRow?.cnt ?? 0);
         const openChildTasks = Number(openChildTasksRow?.cnt ?? 0);
+        const deferArtifactGate = openSubtasks > 0 || openChildTasks > 0;
 
-        if (openSubtasks > 0 || openChildTasks > 0) {
-          rollbackAgentStatsForHold();
-          db.prepare("UPDATE tasks SET status = 'pending', updated_at = ? WHERE id = ?").run(t, taskId);
+        if (deferArtifactGate) {
           appendTaskLog(
             taskId,
             "system",
-            `Video render hold: waiting for documentation/planning completion before final render (open_subtasks=${openSubtasks}, open_collab_tasks=${openChildTasks})`,
+            `Video sequencing notice: documentation/collaboration still in progress. Artifact gate deferred until review stage (open_subtasks=${openSubtasks}, open_collab_tasks=${openChildTasks})`,
           );
-          const updatedTask = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
-          broadcast("task_update", updatedTask);
-          notifyTaskStatus(taskId, task.title, "pending", resolveLang(task.description ?? task.title));
           notifyCeo(
             pickL(
               l(
                 [
-                  `'${task.title}' 작업은 문서화/협업 정리가 아직 끝나지 않아 영상 최종 렌더 단계로 넘어가지 않았습니다. (미완료 subtask ${openSubtasks}건, 협업 task ${openChildTasks}건)`,
+                  `'${task.title}' 는 문서화/협업 정리가 남아 있어 영상 품질 게이트를 Review 단계에서 이어서 확인합니다. (미완료 subtask ${openSubtasks}건, 협업 task ${openChildTasks}건)`,
                 ],
                 [
-                  `'${task.title}' is still waiting for documentation/collaboration closure, so final video rendering did not proceed yet. (open subtasks: ${openSubtasks}, open collaboration tasks: ${openChildTasks})`,
+                  `'${task.title}' still has documentation/collaboration work pending, so video quality gating will continue in Review stage. (open subtasks: ${openSubtasks}, open collaboration tasks: ${openChildTasks})`,
                 ],
                 [
-                  `'${task.title}' は文書化/協業の整理が未完了のため、最終動画レンダリング段階へ進みませんでした。（未完了 subtask: ${openSubtasks}件、協業 task: ${openChildTasks}件）`,
+                  `'${task.title}' は文書化/協業の整理が残っているため、動画品質ゲートは Review 段階で継続確認します。（未完了 subtask: ${openSubtasks}件、協業 task: ${openChildTasks}件）`,
                 ],
                 [
-                  `'${task.title}' 仍在等待文档与协作收口，尚未进入最终视频渲染阶段。（未完成 subtask：${openSubtasks}，协作 task：${openChildTasks}）`,
+                  `'${task.title}' 仍有文档与协作收口工作，视频质量门禁将转入 Review 阶段继续检查。（未完成 subtask：${openSubtasks}，协作 task：${openChildTasks}）`,
                 ],
               ),
               resolveLang(task.description ?? task.title),
             ),
             taskId,
           );
-          return;
         }
 
-        videoArtifactReady = false;
-        const videoArtifactSpec = resolveVideoArtifactSpecForTask(db as any, {
-          project_id: task.project_id,
-          project_path: task.project_path,
-          department_id: task.department_id,
-        });
-        const candidateRelativePaths = resolveVideoArtifactRelativeCandidates(videoArtifactSpec);
-        const wtInfo = taskWorktrees.get(taskId) as
-          | { worktreePath?: string; projectPath?: string }
-          | undefined;
-        const outputRoot = task.project_path || wtInfo?.projectPath || process.cwd();
-        const projectCandidates = candidateRelativePaths.map((relative) => path.join(outputRoot, relative));
+        if (!deferArtifactGate) {
+          videoArtifactReady = false;
+          const videoArtifactSpec = resolveVideoArtifactSpecForTask(db as any, {
+            project_id: task.project_id,
+            project_path: task.project_path,
+            department_id: task.department_id,
+          });
+          const candidateRelativePaths = resolveVideoArtifactRelativeCandidates(videoArtifactSpec);
+          const wtInfo = taskWorktrees.get(taskId) as
+            | { worktreePath?: string; projectPath?: string }
+            | undefined;
+          const outputRoot = task.project_path || wtInfo?.projectPath || process.cwd();
+          const projectCandidates = candidateRelativePaths.map((relative) => path.join(outputRoot, relative));
 
-        if (wtInfo?.worktreePath) {
-          const worktreeCandidates = candidateRelativePaths.map((relative) => path.join(wtInfo.worktreePath!, relative));
-          let sourceVideo: string | null = null;
-          for (const candidate of worktreeCandidates) {
-            if (!fs.existsSync(candidate)) continue;
-            try {
-              if (fs.statSync(candidate).size > 0) {
-                sourceVideo = candidate;
-                break;
+          if (wtInfo?.worktreePath) {
+            const worktreeCandidates = candidateRelativePaths.map((relative) =>
+              path.join(wtInfo.worktreePath!, relative),
+            );
+            let sourceVideo: string | null = null;
+            for (const candidate of worktreeCandidates) {
+              if (!fs.existsSync(candidate)) continue;
+              try {
+                if (fs.statSync(candidate).size > 0) {
+                  sourceVideo = candidate;
+                  break;
+                }
+              } catch {
+                // Ignore stat errors and continue searching candidates.
               }
-            } catch {
-              // Ignore stat errors and continue searching candidates.
+            }
+
+            if (sourceVideo) {
+              try {
+                const destVideo = path.join(outputRoot, videoArtifactSpec.relativePath);
+                fs.mkdirSync(path.dirname(destVideo), { recursive: true });
+                fs.copyFileSync(sourceVideo, destVideo);
+                const size = fs.statSync(destVideo).size;
+                if (size > 0) {
+                  videoArtifactReady = true;
+                  appendTaskLog(
+                    taskId,
+                    "system",
+                    `Video artifact synchronized: ${destVideo} (${size} bytes, source=${sourceVideo})`,
+                  );
+                } else {
+                  appendTaskLog(taskId, "system", `Video artifact sync failed: rendered file is empty (${destVideo})`);
+                }
+              } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : String(err);
+                appendTaskLog(taskId, "system", `Video artifact sync failed: ${msg}`);
+              }
+            } else {
+              appendTaskLog(
+                taskId,
+                "system",
+                `Video artifact not found in worktree (checked: ${worktreeCandidates.join(", ")})`,
+              );
             }
           }
 
-          if (sourceVideo) {
-            try {
-              const destVideo = path.join(outputRoot, videoArtifactSpec.relativePath);
-              fs.mkdirSync(path.dirname(destVideo), { recursive: true });
-              fs.copyFileSync(sourceVideo, destVideo);
-              const size = fs.statSync(destVideo).size;
-              if (size > 0) {
-                videoArtifactReady = true;
-                appendTaskLog(
-                  taskId,
-                  "system",
-                  `Video artifact synchronized: ${destVideo} (${size} bytes, source=${sourceVideo})`,
-                );
-              } else {
-                appendTaskLog(taskId, "system", `Video artifact sync failed: rendered file is empty (${destVideo})`);
+          if (!videoArtifactReady) {
+            for (const projectVideo of projectCandidates) {
+              if (!fs.existsSync(projectVideo)) continue;
+              try {
+                const size = fs.statSync(projectVideo).size;
+                if (size > 0) {
+                  videoArtifactReady = true;
+                  appendTaskLog(
+                    taskId,
+                    "system",
+                    `Video artifact verified at project path: ${projectVideo} (${size} bytes)`,
+                  );
+                  break;
+                }
+              } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : String(err);
+                appendTaskLog(taskId, "system", `Video artifact verification failed: ${msg}`);
               }
-            } catch (err: unknown) {
-              const msg = err instanceof Error ? err.message : String(err);
-              appendTaskLog(taskId, "system", `Video artifact sync failed: ${msg}`);
             }
-          } else {
+          }
+
+          if (!videoArtifactReady) {
             appendTaskLog(
               taskId,
               "system",
-              `Video artifact not found in worktree (checked: ${worktreeCandidates.join(", ")})`,
+              `Video artifact gate notice: missing/empty render output. Review stage will require artifact verification. checked=${projectCandidates.join(", ")}`,
+            );
+            notifyCeo(
+              pickL(
+                l(
+                  [
+                    `'${task.title}' 영상 산출물이 아직 확인되지 않았습니다. 검토 단계에서 \`${videoArtifactSpec.relativePath}\` (또는 legacy \`${videoArtifactSpec.legacyRelativePath}\`) 확인 후 승인해야 합니다.`,
+                  ],
+                  [
+                    `Video artifact for '${task.title}' is not verified yet. In review stage, approval requires \`${videoArtifactSpec.relativePath}\` (or legacy \`${videoArtifactSpec.legacyRelativePath}\`).`,
+                  ],
+                  [
+                    `'${task.title}' の動画成果物はまだ未確認です。レビュー段階で \`${videoArtifactSpec.relativePath}\`（または legacy \`${videoArtifactSpec.legacyRelativePath}\`）確認後に承認してください。`,
+                  ],
+                  [
+                    `任务 '${task.title}' 的视频产物尚未验证。请在 Review 阶段确认 \`${videoArtifactSpec.relativePath}\`（或兼容路径 \`${videoArtifactSpec.legacyRelativePath}\`）后再审批。`,
+                  ],
+                ),
+                resolveLang(task.description ?? task.title),
+              ),
+              taskId,
             );
           }
-        }
-
-        if (!videoArtifactReady) {
-          for (const projectVideo of projectCandidates) {
-            if (!fs.existsSync(projectVideo)) continue;
-            try {
-              const size = fs.statSync(projectVideo).size;
-              if (size > 0) {
-                videoArtifactReady = true;
-                appendTaskLog(taskId, "system", `Video artifact verified at project path: ${projectVideo} (${size} bytes)`);
-                break;
-              }
-            } catch (err: unknown) {
-              const msg = err instanceof Error ? err.message : String(err);
-              appendTaskLog(taskId, "system", `Video artifact verification failed: ${msg}`);
-            }
-          }
-        }
-
-        if (!videoArtifactReady) {
-          rollbackAgentStatsForHold();
-
-          db.prepare("UPDATE tasks SET status = 'pending', updated_at = ? WHERE id = ?").run(t, taskId);
-          appendTaskLog(
-            taskId,
-            "system",
-            `Video artifact gate: missing/empty render output. checked=${projectCandidates.join(", ")}`,
-          );
-          const updatedTask = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
-          broadcast("task_update", updatedTask);
-          notifyTaskStatus(taskId, task.title, "pending", resolveLang(task.description ?? task.title));
-          notifyCeo(
-            pickL(
-              l(
-                [
-                  `'${task.title}' 작업은 영상 산출물 확인 전이라 자동 완료되지 않았습니다. \`${videoArtifactSpec.relativePath}\` (또는 legacy \`${videoArtifactSpec.legacyRelativePath}\`) 생성 후 재개해 주세요.`,
-                ],
-                [
-                  `Task '${task.title}' was not auto-completed because the video artifact is not verified yet. Generate \`${videoArtifactSpec.relativePath}\` (or legacy \`${videoArtifactSpec.legacyRelativePath}\`) and resume.`,
-                ],
-                [
-                  `'${task.title}' は動画成果物未確認のため自動完了されませんでした。 \`${videoArtifactSpec.relativePath}\`（または legacy \`${videoArtifactSpec.legacyRelativePath}\`）を生成して再開してください。`,
-                ],
-                [
-                  `任务 '${task.title}' 因视频产物未验证，未自动完成。请先生成 \`${videoArtifactSpec.relativePath}\`（或兼容路径 \`${videoArtifactSpec.legacyRelativePath}\`）后再继续。`,
-                ],
-              ),
-              resolveLang(task.description ?? task.title),
-            ),
-            taskId,
-          );
-          return;
         }
       }
 

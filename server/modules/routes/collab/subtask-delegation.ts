@@ -92,6 +92,8 @@ interface SubtaskDelegationDeps {
     oauthAccountId: string | null,
   ) => void;
   startProgressTimer: (taskId: string, taskTitle: string, departmentId: string | null) => void;
+  startTaskExecutionForAgent: (taskId: string, agent: AgentRow, deptId: string | null, deptName: string) => void;
+  activeProcesses: Map<string, unknown>;
 }
 
 export function initializeSubtaskDelegation(deps: SubtaskDelegationDeps) {
@@ -134,6 +136,8 @@ export function initializeSubtaskDelegation(deps: SubtaskDelegationDeps) {
     launchApiProviderAgent,
     launchHttpAgent,
     startProgressTimer,
+    startTaskExecutionForAgent,
+    activeProcesses,
   } = deps;
 
   // ---------------------------------------------------------------------------
@@ -263,11 +267,23 @@ export function initializeSubtaskDelegation(deps: SubtaskDelegationDeps) {
       .get(parentTaskId) as { cnt: number };
     if (remaining.cnt !== 0 || subtaskDelegationCompletionNoticeSent.has(parentTaskId)) return;
 
-    const parentTask = db.prepare("SELECT title, description, status FROM tasks WHERE id = ?").get(parentTaskId) as
+    const parentTask = db
+      .prepare(
+        `
+        SELECT title, description, status, workflow_pack_key, source_task_id, assigned_agent_id, department_id
+        FROM tasks
+        WHERE id = ?
+      `,
+      )
+      .get(parentTaskId) as
       | {
           title: string;
           description: string | null;
           status: string;
+          workflow_pack_key: string | null;
+          source_task_id: string | null;
+          assigned_agent_id: string | null;
+          department_id: string | null;
         }
       | undefined;
     if (!parentTask) return;
@@ -294,6 +310,68 @@ export function initializeSubtaskDelegation(deps: SubtaskDelegationDeps) {
     );
     if (parentTask.status === "review") {
       setTimeout(() => finishReview(parentTaskId, parentTask.title), 1200);
+    }
+
+    // Auto-resume only for root video_preprod tasks that were explicitly held for final render ordering.
+    if (
+      parentTask.status === "pending" &&
+      parentTask.workflow_pack_key === "video_preprod" &&
+      !parentTask.source_task_id &&
+      parentTask.assigned_agent_id
+    ) {
+      const recentLogs = db
+        .prepare(
+          `
+          SELECT message
+          FROM task_logs
+          WHERE task_id = ?
+            AND kind = 'system'
+          ORDER BY created_at DESC
+          LIMIT 12
+        `,
+        )
+        .all(parentTaskId) as Array<{ message: string | null }>;
+      const heldForRenderOrdering = recentLogs.some((row) =>
+        String(row.message ?? "").includes(
+          "Video render hold: waiting for documentation/planning completion before final render",
+        ),
+      );
+      if (!heldForRenderOrdering) return;
+
+      const assignedAgent = db.prepare("SELECT * FROM agents WHERE id = ?").get(parentTask.assigned_agent_id) as
+        | AgentRow
+        | undefined;
+      if (!assignedAgent) {
+        appendTaskLog(parentTaskId, "system", "Auto-resume skipped: assigned agent not found");
+        return;
+      }
+
+      if (activeProcesses.has(parentTaskId)) {
+        appendTaskLog(parentTaskId, "system", "Auto-resume skipped: task process already active");
+        return;
+      }
+      if (
+        assignedAgent.status === "working" &&
+        assignedAgent.current_task_id &&
+        assignedAgent.current_task_id !== parentTaskId &&
+        activeProcesses.has(assignedAgent.current_task_id)
+      ) {
+        appendTaskLog(
+          parentTaskId,
+          "system",
+          `Auto-resume deferred: assigned agent busy on ${assignedAgent.current_task_id}`,
+        );
+        return;
+      }
+
+      const deptId = assignedAgent.department_id ?? parentTask.department_id ?? null;
+      const deptName = deptId ? getDeptName(deptId) : "Unassigned";
+      appendTaskLog(
+        parentTaskId,
+        "system",
+        "Video render hold cleared: all subtasks completed. Auto-resuming final render run.",
+      );
+      startTaskExecutionForAgent(parentTaskId, assignedAgent, deptId, deptName);
     }
   }
 

@@ -113,6 +113,9 @@ export interface Task {
   department_id: string | null;
   assigned_agent_id: string | null;
   assigned_agent?: Agent;
+  agent_name?: string | null;
+  agent_name_ko?: string | null;
+  agent_avatar?: string | null;
   project_id?: string | null;
   status: TaskStatus;
   priority: number;

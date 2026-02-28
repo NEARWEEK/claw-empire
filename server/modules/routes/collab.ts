@@ -16,6 +16,7 @@ import { createTaskDelegationHandler } from "./collab/task-delegation.ts";
 export function registerRoutesPartB(ctx: RuntimeContext): RouteCollabExports {
   const __ctx: RuntimeContext = ctx;
   const appendTaskLog = __ctx.appendTaskLog;
+  const activeProcesses = __ctx.activeProcesses;
   const broadcast = __ctx.broadcast;
   const buildCliFailureMessage = __ctx.buildCliFailureMessage;
   const buildDirectReplyPrompt = __ctx.buildDirectReplyPrompt;
@@ -759,6 +760,8 @@ export function registerRoutesPartB(ctx: RuntimeContext): RouteCollabExports {
     launchApiProviderAgent,
     launchHttpAgent,
     startProgressTimer,
+    startTaskExecutionForAgent,
+    activeProcesses,
   });
 
   const collabCoordination = initializeCollabCoordination({
