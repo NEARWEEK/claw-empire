@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import type { Lang } from "../../../types/lang.ts";
 import type { AgentRow } from "./direct-chat.ts";
 import { reconcileVideoRenderDelegationState } from "../../workflow/orchestration/video-render-delegation-state.ts";
@@ -383,52 +382,6 @@ export function initializeSubtaskDelegation(deps: SubtaskDelegationDeps) {
               broadcast("subtask_update", db.prepare("SELECT * FROM subtasks WHERE id = ?").get(sub.id));
             }
           }
-          // Merge completed subtask branches into HEAD so the render worktree inherits all prior work
-          const parentTaskRow = db.prepare("SELECT project_id, project_path, description, title FROM tasks WHERE id = ?").get(parentTaskId) as
-            | { project_id?: string | null; project_path?: string | null; description?: string | null; title?: string | null }
-            | undefined;
-          if (parentTaskRow) {
-            const projPath = resolveProjectPath(parentTaskRow);
-            const completedDelegatedIds = (
-              db
-                .prepare(
-                  "SELECT delegated_task_id FROM subtasks WHERE task_id = ? AND status = 'done' AND delegated_task_id IS NOT NULL AND title NOT LIKE '%[VIDEO_FINAL_RENDER]%'",
-                )
-                .all(parentTaskId) as Array<{ delegated_task_id: string }>
-            ).map((r) => r.delegated_task_id);
-
-            let mergedCount = 0;
-            for (const dtId of completedDelegatedIds) {
-              const shortId = dtId.slice(0, 8);
-              const branchName = `climpire/${shortId}`;
-              try {
-                // Check if branch exists
-                execFileSync("git", ["show-ref", "--verify", `refs/heads/${branchName}`], {
-                  cwd: projPath,
-                  stdio: "pipe",
-                  timeout: 5000,
-                });
-                // Auto-commit any uncommitted changes in the worktree (if still around)
-                const mergeMsg = `Pre-render merge: subtask ${shortId} (branch ${branchName})`;
-                execFileSync("git", ["merge", branchName, "--no-ff", "-m", mergeMsg], {
-                  cwd: projPath,
-                  stdio: "pipe",
-                  timeout: 30000,
-                });
-                mergedCount++;
-              } catch {
-                // Branch already merged, deleted, or conflict — skip silently
-              }
-            }
-            if (mergedCount > 0) {
-              appendTaskLog(
-                parentTaskId,
-                "system",
-                `Pre-render consolidation: merged ${mergedCount} completed subtask branch(es) into HEAD for VIDEO_FINAL_RENDER.`,
-              );
-            }
-          }
-
           appendTaskLog(
             parentTaskId,
             "system",

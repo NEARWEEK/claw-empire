@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -478,11 +479,50 @@ export function createSubtaskDelegationBatch(deps: BatchDeps) {
         const spawnPrompt = buildSubtaskDelegationPrompt(parentTask, subtasks, execAgent, targetDeptId, targetDeptName);
         const executionSession = ensureTaskExecutionSession(delegatedTaskId, execAgent.id, execProvider);
         const worktreeNote = `\nNOTE: You are working in an isolated Git worktree branch (climpire/${delegatedTaskId.slice(0, 8)}). Commit your changes normally.`;
+
+        // Build sibling worktree reference block so agents can read prior departments' work
+        let siblingWorktreeBlock = "";
+        try {
+          const siblingRows = db
+            .prepare(
+              "SELECT s.title, s.target_department_id, s.delegated_task_id FROM subtasks s WHERE s.task_id = ? AND s.status = 'done' AND s.delegated_task_id IS NOT NULL AND s.delegated_task_id != ?",
+            )
+            .all(parentTask.id, delegatedTaskId) as Array<{
+            title: string;
+            target_department_id: string | null;
+            delegated_task_id: string;
+          }>;
+          const validSiblings: string[] = [];
+          for (const sib of siblingRows) {
+            const shortId = sib.delegated_task_id.slice(0, 8);
+            const wtPath = path.join(projPath, ".climpire-worktrees", shortId);
+            if (fs.existsSync(wtPath)) {
+              const deptLabel = sib.target_department_id
+                ? getDeptName(sib.target_department_id, parentTask.workflow_pack_key)
+                : "unknown";
+              validSiblings.push(`- [${deptLabel}] ${wtPath}`);
+            }
+          }
+          if (validSiblings.length > 0) {
+            siblingWorktreeBlock = [
+              "",
+              "[Prior Department Deliverables]",
+              "The following directories contain completed work from other departments on this project.",
+              "You MUST read and reference these files to ensure consistency with prior deliverables.",
+              "These are READ-ONLY references — do NOT modify files in these paths.",
+              ...validSiblings,
+            ].join("\n");
+          }
+        } catch {
+          // best effort — do not block delegation on sibling lookup failure
+        }
+
         const sessionPrompt = [
           `[Task Session] id=${executionSession.sessionId} owner=${executionSession.agentId} provider=${executionSession.provider}`,
           "Task-scoped session: keep continuity only within this delegated task.",
           spawnPrompt,
           worktreeNote,
+          siblingWorktreeBlock,
         ].join("\n");
 
         if (execProvider === "claude") {
