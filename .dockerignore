@@ -1,0 +1,21 @@
+# Keep local secrets and env files out of Docker build context
+.env*
+
+# Local/runtime artifacts
+.git
+.gitignore
+node_modules
+data
+logs
+coverage
+playwright-report
+
+# Build/test caches
+dist
+.tmp
+*.tsbuildinfo
+
+# OS/editor noise
+.DS_Store
+.vscode
+.idea

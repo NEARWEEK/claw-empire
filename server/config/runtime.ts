@@ -87,7 +87,19 @@ export const DIST_DIR = path.resolve(SERVER_DIRNAME, "..", "..", "dist");
 export const IS_PRODUCTION = !process.env.VITE_DEV && fs.existsSync(path.join(DIST_DIR, "index.html"));
 
 // ---------------------------------------------------------------------------
-// Database defaults
+// Runtime path defaults
 // ---------------------------------------------------------------------------
-export const DEFAULT_DB_PATH = path.join(process.cwd(), "claw-empire.sqlite");
+function resolveDefaultDataRoot(): string {
+  const envDataRoot = normalizePathEnv(process.env.APP_DATA_DIR);
+  if (envDataRoot) return envDataRoot;
+
+  const dockerDataRoot = "/app/data";
+  if (fs.existsSync(dockerDataRoot)) return dockerDataRoot;
+
+  return process.cwd();
+}
+
+export const DEFAULT_DATA_ROOT = resolveDefaultDataRoot();
+export const DEFAULT_DB_PATH = path.join(DEFAULT_DATA_ROOT, "claw-empire.sqlite");
+export const DEFAULT_LOGS_DIR = path.join(DEFAULT_DATA_ROOT, "logs");
 export const LEGACY_DB_PATH = path.join(process.cwd(), "climpire.sqlite");

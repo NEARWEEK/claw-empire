@@ -29,6 +29,7 @@
   <a href="#screenshots">Screenshots</a> &middot;
   <a href="#tech-stack">Tech Stack</a> &middot;
   <a href="#cli-provider-setup">Providers</a> &middot;
+  <a href="#docker-deployment-quick-start">Docker Deploy</a> &middot;
   <a href="#security">Security</a>
 </p>
 
@@ -367,6 +368,59 @@ Notes:
 ---
 
 ## Quick Start
+
+## Docker Deployment (Quick Start)
+
+This repo now ships production-oriented Docker defaults:
+
+- Runs as **non-root** user (`app`, uid/gid `10001`)
+- Includes required CLI/runtime tools (`git`, `bash`, `openssh-client`)
+- Uses `docker-compose.yml` + `Dockerfile`
+- Persists runtime data in `./data` (already gitignored)
+
+### 1) Prepare environment files
+
+```bash
+cp .env.example .env.docker
+```
+
+Create `.env.docker.private` for sensitive runtime secrets (keep this file local only):
+
+```bash
+cat > .env.docker.private <<'EOF'
+# Claude Code via compatible endpoint
+ANTHROPIC_BASE_URL=https://api.minimaxi.com/anthropic
+ANTHROPIC_API_KEY=YOUR_ANTHROPIC_API_KEY
+EOF
+chmod 600 .env.docker.private
+```
+
+> `.env.docker*` is ignored by git (`.env.*`), so tokens are not committed by default.
+
+### 2) Start
+
+```bash
+docker compose up -d --build
+```
+
+### 3) Verify
+
+```bash
+docker ps --filter name=claw-empire
+docker logs -f claw-empire
+```
+
+Open: `http://127.0.0.1:8790`
+
+### Optional: publish image to GHCR
+
+```bash
+# requires token with package write scope
+echo "<GITHUB_TOKEN_WITH_PACKAGES_WRITE>" | docker login ghcr.io -u <github-user> --password-stdin
+docker tag claw-empire-claw-empire:latest ghcr.io/<github-user>/claw-empire:latest
+docker push ghcr.io/<github-user>/claw-empire:latest
+```
+
 
 ### Prerequisites
 

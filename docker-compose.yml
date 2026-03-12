@@ -1,0 +1,23 @@
+services:
+  claw-empire:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_UID: 10001
+        APP_GID: 10001
+    container_name: claw-empire
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+      - .env.docker.private
+    environment:
+      DB_PATH: /app/data/claw-empire.sqlite
+      LOGS_DIR: /app/data/logs
+    ports:
+      - "8790:8790"
+    volumes:
+      - ./data:/app/data
+    working_dir: /app
+    security_opt:
+      - no-new-privileges:true

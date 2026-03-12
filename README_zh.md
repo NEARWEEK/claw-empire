@@ -29,6 +29,7 @@
   <a href="#截图">截图</a> &middot;
   <a href="#技术栈">技术栈</a> &middot;
   <a href="#cli-提供商配置">提供商</a> &middot;
+  <a href="#docker-部署快速">Docker 部署</a> &middot;
   <a href="#安全性">安全性</a>
 </p>
 
@@ -367,6 +368,59 @@ curl -X POST http://127.0.0.1:8790/api/inbox \
 ---
 
 ## 快速开始
+
+## Docker 部署（快速）
+
+当前仓库已提供面向生产的 Docker 默认配置：
+
+- 默认以**非 root 用户**运行（`app`，uid/gid `10001`）
+- 内置运行所需工具（`git`、`bash`、`openssh-client`）
+- 使用标准文件名：`docker-compose.yml` + `Dockerfile`
+- 运行数据落盘到 `./data`（已加入 git 忽略）
+
+### 1）准备环境变量文件
+
+```bash
+cp .env.example .env.docker
+```
+
+创建 `.env.docker.private`（仅本机保存的敏感配置）：
+
+```bash
+cat > .env.docker.private <<'EOF'
+# Claude Code 兼容端点
+ANTHROPIC_BASE_URL=https://api.minimaxi.com/anthropic
+ANTHROPIC_API_KEY=YOUR_ANTHROPIC_API_KEY
+EOF
+chmod 600 .env.docker.private
+```
+
+> `.env.docker*` 已被 git 忽略（规则 `.env.*`），默认不会提交 token。
+
+### 2）启动
+
+```bash
+docker compose up -d --build
+```
+
+### 3）验证
+
+```bash
+docker ps --filter name=claw-empire
+docker logs -f claw-empire
+```
+
+访问：`http://127.0.0.1:8790`
+
+### 可选：推送镜像到 GHCR
+
+```bash
+# 需要 packages write 权限的 GitHub Token
+echo "<GITHUB_TOKEN_WITH_PACKAGES_WRITE>" | docker login ghcr.io -u <github-user> --password-stdin
+docker tag claw-empire-claw-empire:latest ghcr.io/<github-user>/claw-empire:latest
+docker push ghcr.io/<github-user>/claw-empire:latest
+```
+
 
 ### 环境要求
 

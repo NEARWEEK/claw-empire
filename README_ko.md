@@ -29,6 +29,7 @@
   <a href="#스크린샷">스크린샷</a> &middot;
   <a href="#기술-스택">기술 스택</a> &middot;
   <a href="#cli-프로바이더-설정">프로바이더</a> &middot;
+  <a href="#docker-배포-빠른-시작">Docker 배포</a> &middot;
   <a href="#보안">보안</a>
 </p>
 
@@ -367,6 +368,59 @@ OpenClaw 없이도 Claw-Empire만으로 메신저 채널을 직접 운영할 수
 ---
 
 ## 빠른 시작
+
+## Docker 배포 (빠른 시작)
+
+이 저장소는 운영 지향 Docker 기본 구성을 포함합니다.
+
+- 기본 실행 사용자는 **non-root** (`app`, uid/gid `10001`)
+- 필수 도구(`git`, `bash`, `openssh-client`) 포함
+- 표준 파일명 `docker-compose.yml` + `Dockerfile` 사용
+- 런타임 데이터는 `./data`에 영속화 (gitignore 적용)
+
+### 1) 환경 파일 준비
+
+```bash
+cp .env.example .env.docker
+```
+
+민감 정보는 `.env.docker.private`에 저장하세요 (로컬 전용):
+
+```bash
+cat > .env.docker.private <<'EOF'
+# Claude Code 호환 엔드포인트
+ANTHROPIC_BASE_URL=https://api.minimaxi.com/anthropic
+ANTHROPIC_API_KEY=YOUR_ANTHROPIC_API_KEY
+EOF
+chmod 600 .env.docker.private
+```
+
+> `.env.docker*`는 `.env.*` 규칙으로 git에 커밋되지 않습니다.
+
+### 2) 시작
+
+```bash
+docker compose up -d --build
+```
+
+### 3) 확인
+
+```bash
+docker ps --filter name=claw-empire
+docker logs -f claw-empire
+```
+
+접속: `http://127.0.0.1:8790`
+
+### 선택: GHCR로 이미지 푸시
+
+```bash
+# packages write 권한이 있는 GitHub Token 필요
+echo "<GITHUB_TOKEN_WITH_PACKAGES_WRITE>" | docker login ghcr.io -u <github-user> --password-stdin
+docker tag claw-empire-claw-empire:latest ghcr.io/<github-user>/claw-empire:latest
+docker push ghcr.io/<github-user>/claw-empire:latest
+```
+
 
 ### 사전 요구사항
 

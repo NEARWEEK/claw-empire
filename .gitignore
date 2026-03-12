@@ -4,6 +4,7 @@ dist/
 
 # Runtime artifacts
 logs/
+data/
 custom-skills/
 /tasks/
 *.log

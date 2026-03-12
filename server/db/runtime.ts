@@ -1,8 +1,7 @@
 import fs from "node:fs";
-import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-import { DEFAULT_DB_PATH, LEGACY_DB_PATH } from "../config/runtime.ts";
+import { DEFAULT_DB_PATH, DEFAULT_LOGS_DIR, LEGACY_DB_PATH } from "../config/runtime.ts";
 
 export function readNonNegativeIntEnv(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -96,7 +95,7 @@ export function initializeDatabaseRuntime(): {
   );
   console.log(`[Claw-Empire] Subtask delegation sweep: interval=${SUBTASK_DELEGATION_SWEEP_MS}ms`);
 
-  const logsDir = process.env.LOGS_DIR ?? path.join(process.cwd(), "logs");
+  const logsDir = process.env.LOGS_DIR ?? DEFAULT_LOGS_DIR;
   try {
     fs.mkdirSync(logsDir, { recursive: true });
   } catch {
