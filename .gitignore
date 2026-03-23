@@ -67,3 +67,7 @@ Thumbs.db
 
 # Playwright artifacts
 test-results/
+
+# Saiba generated outputs
+tools/saiba-audit/reports/
+tools/saiba-reports/output/
