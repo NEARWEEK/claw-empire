@@ -36,8 +36,10 @@ import { registerTaskCrudRoutes } from "./core/tasks/crud.ts";
 import { registerTaskExecutionRoutes } from "./core/tasks/execution.ts";
 import { registerTaskSubtaskRoutes } from "./core/tasks/subtasks.ts";
 import { registerUpdateAutoRoutes } from "./core/update-auto/register.ts";
+import { registerVentureRoutes } from "./core/ventures.ts";
 import type { AgentRow, MeetingMinuteEntryRow, MeetingMinutesRow, MeetingReviewDecision } from "./shared/types.ts";
 import { getDiscordReceiverStatus } from "../../messenger/discord-receiver.ts";
+import { getSlackReceiverStatus } from "../../messenger/slack-receiver.ts";
 
 export function registerRoutesPartA(ctx: RuntimeContext): Record<string, never> {
   const __ctx: RuntimeContext = ctx;
@@ -255,6 +257,14 @@ export function registerRoutesPartA(ctx: RuntimeContext): Record<string, never> 
     }
   });
 
+  app.get("/api/messenger/receiver/slack", (_req, res) => {
+    try {
+      res.json({ ok: true, status: getSlackReceiverStatus() });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err?.message || String(err) });
+    }
+  });
+
   app.post("/api/messenger/discord/channels", async (req, res) => {
     try {
       const body = (req.body ?? {}) as { token?: string };
@@ -348,6 +358,18 @@ export function registerRoutesPartA(ctx: RuntimeContext): Record<string, never> 
     normalizeTextField,
     runInTransaction,
     nowMs,
+  });
+
+  // ---------------------------------------------------------------------------
+  // Ventures
+  // ---------------------------------------------------------------------------
+  registerVentureRoutes({
+    app,
+    db,
+    broadcast,
+    nowMs,
+    runInTransaction,
+    firstQueryValue,
   });
 
   // ---------------------------------------------------------------------------

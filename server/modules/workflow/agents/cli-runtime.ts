@@ -240,6 +240,7 @@ export function createCliRuntimeTools(deps: CliRuntimeDeps) {
     const cleanEnv = { ...process.env };
     delete cleanEnv.CLAUDECODE;
     delete cleanEnv.CLAUDE_CODE;
+    delete cleanEnv.ANTHROPIC_API_KEY;
     cleanEnv.PATH = withCliPathFallback(String(cleanEnv.PATH ?? process.env.PATH ?? ""));
     cleanEnv.NO_COLOR = "1";
     cleanEnv.FORCE_COLOR = "0";

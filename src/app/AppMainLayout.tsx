@@ -6,6 +6,7 @@ import TaskBoard from "../components/TaskBoard";
 import AgentManager from "../components/AgentManager";
 import SkillsLibrary from "../components/SkillsLibrary";
 import SettingsPanel from "../components/SettingsPanel";
+import VentureStudioDashboard from "../components/venture-studio/VentureStudioDashboard";
 import { I18nProvider } from "../i18n";
 import type {
   Agent,
@@ -538,6 +539,8 @@ export default function AppMainLayout({
                 }}
               />
             )}
+
+            {view === "ventures" && <VentureStudioDashboard />}
 
             {view === "skills" && <SkillsLibrary agents={agents} />}
 

@@ -211,7 +211,7 @@ export function createOAuthRouteHelpers(ctx: RuntimeContext) {
     url.searchParams.set("redirect_uri", `${OAUTH_BASE_URL}${callbackPath}`);
     url.searchParams.set(
       "scope",
-      ["https://www.googleapis.com/auth/cloud-platform", "openid", "email", "profile"].join(" "),
+      ["https://www.googleapis.com/auth/cloud-platform", "https://www.googleapis.com/auth/drive.readonly", "openid", "email", "profile"].join(" "),
     );
     url.searchParams.set("code_challenge", challenge);
     url.searchParams.set("code_challenge_method", "S256");

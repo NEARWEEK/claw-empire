@@ -6,6 +6,7 @@ import path from "path";
 import { HOST, PKG_VERSION, PORT } from "../config/runtime.ts";
 import { notifyTaskStatus } from "../gateway/client.ts";
 import { startDiscordReceiver } from "../messenger/discord-receiver.ts";
+import { startSlackReceiver } from "../messenger/slack-receiver.ts";
 import { startTelegramReceiver } from "../messenger/telegram-receiver.ts";
 import { registerGracefulShutdownHandlers } from "./lifecycle/register-graceful-shutdown.ts";
 
@@ -462,6 +463,7 @@ export function startLifecycle(ctx: RuntimeContext): void {
   setTimeout(autoAssignAgentProviders, 4_000);
   const telegramReceiver = startTelegramReceiver({ db });
   const discordReceiver = startDiscordReceiver({ db });
+  const slackReceiver = startSlackReceiver({ db, app });
 
   // ---------------------------------------------------------------------------
   // Start HTTP server + WebSocket
