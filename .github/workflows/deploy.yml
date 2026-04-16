@@ -1,0 +1,58 @@
+name: Deploy to GCE
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-gce
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      GCE_HOST: ${{ secrets.GCE_HOST }}
+      GCE_USER: ${{ secrets.GCE_USER }}
+
+    steps:
+      - name: Load secrets from 1Password
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          GCE_SSH_KEY: op://Saiba Automation/GCE SSH Key/private_key
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "$GCE_SSH_KEY" > ~/.ssh/gce_key
+          chmod 600 ~/.ssh/gce_key
+          ssh-keyscan -H "$GCE_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Deploy Claw Empire
+        run: |
+          ssh -i ~/.ssh/gce_key -o StrictHostKeyChecking=no "$GCE_USER@$GCE_HOST" '
+            cd ~/claw-empire &&
+            git pull origin main &&
+            pnpm install --frozen-lockfile &&
+            pnpm build &&
+            sudo systemctl restart claw-empire
+          '
+
+      - name: Verify deployment
+        run: |
+          sleep 10
+          ssh -i ~/.ssh/gce_key "$GCE_USER@$GCE_HOST" '
+            curl -sf http://localhost:8790/api/health || exit 1
+          '
+          echo "Deployment verified"

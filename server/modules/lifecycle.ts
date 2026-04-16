@@ -9,6 +9,7 @@ import { startDiscordReceiver } from "../messenger/discord-receiver.ts";
 import { startSlackReceiver } from "../messenger/slack-receiver.ts";
 import { startTelegramReceiver } from "../messenger/telegram-receiver.ts";
 import { registerGracefulShutdownHandlers } from "./lifecycle/register-graceful-shutdown.ts";
+import { startScheduler } from "../workflows/nw-daily-pulse.ts";
 
 export function startLifecycle(ctx: RuntimeContext): void {
   const {
@@ -464,6 +465,20 @@ export function startLifecycle(ctx: RuntimeContext): void {
   const telegramReceiver = startTelegramReceiver({ db });
   const discordReceiver = startDiscordReceiver({ db });
   const slackReceiver = startSlackReceiver({ db, app });
+
+  // Start scheduled automations (morning pulse, github health, content calendar, etc.)
+  const schedulerChannels = {
+    standup: process.env.SLACK_CHANNEL_STANDUP || "",
+    meetings: process.env.SLACK_CHANNEL_MEETINGS || "",
+    content: process.env.SLACK_CHANNEL_CONTENT || "",
+    github: process.env.SLACK_CHANNEL_GITHUB || "",
+  };
+  const hasAnyChannel = Object.values(schedulerChannels).some((c) => c.length > 0);
+  if (hasAnyChannel) {
+    startScheduler(db, schedulerChannels);
+  } else {
+    console.log("[Claw-Empire] Scheduler skipped: no SLACK_CHANNEL_* env vars set. Set them in .env to enable automations.");
+  }
 
   // ---------------------------------------------------------------------------
   // Start HTTP server + WebSocket

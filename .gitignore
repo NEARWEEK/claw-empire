@@ -71,3 +71,4 @@ test-results/
 # Saiba generated outputs
 tools/saiba-audit/reports/
 tools/saiba-reports/output/
+.envrc
